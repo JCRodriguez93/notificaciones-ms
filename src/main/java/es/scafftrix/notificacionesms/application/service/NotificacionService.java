@@ -7,6 +7,8 @@ import es.scafftrix.notificacionesms.domain.exception.NotificacionNotFoundExcept
 import es.scafftrix.notificacionesms.domain.model.EstadoNotificacion;
 import es.scafftrix.notificacionesms.domain.model.Notificacion;
 import es.scafftrix.notificacionesms.domain.model.ResultadoEnvio;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,8 @@ import java.util.List;
 @Transactional
 public class NotificacionService implements NotificacionUseCase {
 
+    private static final Logger logger = LoggerFactory.getLogger(NotificacionService.class);
+
     private final NotificacionRepository repository;
     private final Notificador notificador;
 
@@ -33,12 +37,15 @@ public class NotificacionService implements NotificacionUseCase {
     @Override
     @Transactional(readOnly = true)
     public List<Notificacion> findAll() {
-        return repository.findAll();
+        List<Notificacion> notificaciones = repository.findAll();
+        logger.debug("Consulta de notificaciones: {} resultado(s)", notificaciones.size());
+        return notificaciones;
     }
 
     @Override
     @Transactional(readOnly = true)
     public Notificacion findById(Long id) {
+        logger.debug("Buscando notificación con id={}", id);
         return repository.findById(id).orElseThrow(() -> new NotificacionNotFoundException(id));
     }
 
@@ -53,6 +60,8 @@ public class NotificacionService implements NotificacionUseCase {
         Notificacion pendiente = repository.save(new Notificacion(null,
                 notificacion.destinatario(), notificacion.asunto(), notificacion.cuerpo(),
                 EstadoNotificacion.PENDIENTE, null));
+        logger.debug("Notificación id={} registrada como PENDIENTE (destinatario={})",
+                pendiente.id(), pendiente.destinatario());
 
         ResultadoEnvio resultado = notificador.enviar(
                 pendiente.destinatario(), pendiente.asunto(), pendiente.cuerpo());
@@ -61,6 +70,14 @@ public class NotificacionService implements NotificacionUseCase {
                 ? EstadoNotificacion.ENVIADO
                 : EstadoNotificacion.FALLIDO;
         String motivoFallo = resultado.exito() ? null : resultado.detalle();
+
+        if (resultado.exito()) {
+            logger.info("Notificación id={} ENVIADA a={} asunto='{}'",
+                    pendiente.id(), pendiente.destinatario(), pendiente.asunto());
+        } else {
+            logger.warn("Notificación id={} FALLIDA para a={} asunto='{}': {}",
+                    pendiente.id(), pendiente.destinatario(), pendiente.asunto(), motivoFallo);
+        }
 
         return repository.save(new Notificacion(pendiente.id(), pendiente.destinatario(),
                 pendiente.asunto(), pendiente.cuerpo(), estado, motivoFallo));
